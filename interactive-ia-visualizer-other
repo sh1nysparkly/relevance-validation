@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive IA Graph Generator</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            display: flex;
+            height: 100vh;
+        }
+        #graph-container {
+            flex-grow: 1;
+            position: relative;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            cursor: move;
+        }
+        .node {
+            cursor: pointer;
+            stroke-width: 1.5px;
+            transition: stroke 0.3s, stroke-width 0.3s;
+        }
+        .node-label {
+            fill: #f0f0f0;
+            font-size: 10px;
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: central;
+        }
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(40, 40, 40, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            width: 300px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            border: 1px solid #444;
+        }
+        #controls h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+            font-size: 1.2em;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        input[type="file"], input[type="range"], select {
+            width: 100%;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background-color: #333;
+            color: #f0f0f0;
+            box-sizing: border-box;
+        }
+        #tooltip {
+            position: absolute;
+            visibility: hidden;
+            background-color: rgba(20, 20, 20, 0.95);
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 10px;
+            color: #f0f0f0;
+            font-size: 12px;
+            pointer-events: none;
+            max-width: 350px;
+        }
+        #tooltip h3 {
+            margin-top: 0;
+            font-size: 1.1em;
+            color: #61afef;
+        }
+        #tooltip p {
+            margin: 4px 0;
+        }
+        #legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(40, 40, 40, 0.9);
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        #legend h3 {
+            margin: 0 0 10px 0;
+            font-size: 1em;
+        }
+        #legend-items {
+             max-height: 150px;
+             overflow-y: auto;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            margin-right: 8px;
+            border-radius: 3px;
+            border: 1px solid #777;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="graph-container"></div>
+
+    <div id="controls">
+        <h2>IA Graph Controls</h2>
+        <div class="control-group">
+            <label for="json-file">Upload JSON Hierarchy</label>
+            <input type="file" id="json-file" accept=".json">
+        </div>
+        <div class="control-group">
+            <label for="csv-file">Upload CSV Data</label>
+            <input type="file" id="csv-file" accept=".csv">
+        </div>
+        <div class="control-group">
+            <label for="node-size">Node Size Metric:</label>
+            <select id="node-size">
+                <option value="entityDensity">Entity Density</option>
+                <option value="keywordCount">Keyword Count</option>
+                <option value="searchVolume">Search Volume (from CSV)</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="link-distance">Link Distance: <span id="link-distance-value">50</span></label>
+            <input type="range" id="link-distance" min="10" max="200" value="50">
+        </div>
+         <div class="control-group">
+            <label for="charge-strength">Charge Strength: <span id="charge-strength-value">-100</span></label>
+            <input type="range" id="charge-strength" min="-500" max="0" value="-100">
+        </div>
+    </div>
+    
+    <div id="legend">
+        <h3>Top-Level Categories</h3>
+        <div id="legend-items"></div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script>
+        let jsonData = null;
+        let csvData = null;
+        let simulation;
+
+        const fileInputJSON = document.getElementById('json-file');
+        const fileInputCSV = document.getElementById('csv-file');
+        const nodeSizeSelect = document.getElementById('node-size');
+        const linkDistanceSlider = document.getElementById('link-distance');
+        const chargeStrengthSlider = document.getElementById('charge-strength');
+        
+        fileInputJSON.addEventListener('change', handleJsonUpload);
+        fileInputCSV.addEventListener('change', handleCsvUpload);
+        nodeSizeSelect.addEventListener('change', () => drawGraph(jsonData, csvData));
+        linkDistanceSlider.addEventListener('input', updateSimulation);
+        chargeStrengthSlider.addEventListener('input', updateSimulation);
+
+        function handleJsonUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        jsonData = JSON.parse(e.target.result);
+                        drawGraph(jsonData, csvData);
+                    } catch (error) {
+                        alert("Error parsing JSON file.");
+                        console.error(error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function handleCsvUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        csvData = results.data;
+                        if (jsonData) {
+                            drawGraph(jsonData, csvData);
+                        }
+                    },
+                    error: function(error) {
+                        alert("Error parsing CSV file.");
+                        console.error(error);
+                    }
+                });
+            }
+        }
+        
+        function updateSimulation() {
+            if (!simulation) return;
+            const linkDistance = +linkDistanceSlider.value;
+            const chargeStrength = +chargeStrengthSlider.value;
+
+            document.getElementById('link-distance-value').textContent = linkDistance;
+            document.getElementById('charge-strength-value').textContent = chargeStrength;
+
+            simulation.force("link").distance(linkDistance);
+            simulation.force("charge").strength(chargeStrength);
+            simulation.alpha(0.3).restart();
+        }
+
+        function getTopLevelCategory(categoryPath) {
+            if (!categoryPath || typeof categoryPath !== 'string') {
+                return "Uncategorized";
+            }
+            const parts = categoryPath.split('/');
+            return parts[1] || "Uncategorized";
+        }
+
+        function drawGraph(json, csv) {
+            if (!json) return;
+
+            // Clear previous graph
+            d3.select("#graph-container").html("");
+
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            const svg = d3.select("#graph-container").append("svg")
+                .attr("viewBox", [-width / 2, -height / 2, width, height])
+                .call(d3.zoom().on("zoom", function (event) {
+                    g.attr("transform", event.transform);
+                }));
+
+            const g = svg.append("g");
+            
+            const tooltip = d3.select("#tooltip");
+
+            let nodes = [];
+            let links = [];
+            const slugToNodeMap = new Map();
+
+            // --- REVISED LOGIC START ---
+            // 1. Traverse the JSON to build the definitive hierarchy (nodes and links)
+            function traverse(node, parent) {
+                if (!node || !node.slug) return;
+
+                const newNode = {
+                    ...node,
+                    id: nodes.length, 
+                    children: undefined // Important: remove children from the flat node structure
+                };
+                
+                nodes.push(newNode);
+                slugToNodeMap.set(newNode.slug, newNode);
+
+                if (parent) {
+                    const parentNode = slugToNodeMap.get(parent.slug);
+                    if (parentNode) {
+                       links.push({ source: parentNode.id, target: newNode.id });
+                    }
+                }
+
+                if (node.children && Array.isArray(node.children)) {
+                    node.children.forEach(child => traverse(child, newNode));
+                }
+            }
+            
+            traverse(json['AMA Travel Site Architecture'], null);
+
+            // 2. Augment nodes with data from the CSV file
+            if (csv) {
+                // Create a clean numeric searchVolume property
+                csv.forEach(row => {
+                    const volume = row['Search Volume'];
+                    row.searchVolume = volume ? parseInt(String(volume).replace(/,/g, ''), 10) : 0;
+                });
+                
+                csv.forEach(row => {
+                    const slug = row['URL Slug'];
+                    if (slugToNodeMap.has(slug)) {
+                        const node = slugToNodeMap.get(slug);
+                        // Merge CSV data into the node from JSON.
+                        // JSON data takes precedence unless it's undefined.
+                        Object.assign(node, {
+                           ...row, // assign all csv row data first
+                           ...node // then overwrite with existing node data if present
+                        });
+                    }
+                });
+            }
+            // --- REVISED LOGIC END ---
+
+            const nodeSizeMetric = nodeSizeSelect.value;
+            const sizeScale = d3.scaleSqrt()
+                .domain([0, d3.max(nodes, d => d[nodeSizeMetric] || 0)])
+                .range([3, 25]);
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+            const displayNodes = nodes.filter(d => d.slug); // Ensure nodes are valid
+            
+            simulation = d3.forceSimulation(displayNodes)
+                .force("link", d3.forceLink(links).id(d => d.id))
+                .force("charge", d3.forceManyBody())
+                .force("center", d3.forceCenter(0, 0))
+                .on("tick", ticked);
+            
+            updateSimulation();
+
+            const link = g.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(links)
+                .join("line")
+                .attr("class", "link");
+
+            const nodeGroup = g.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(displayNodes)
+                .join("g");
+
+            const node = nodeGroup.append("circle")
+                .attr("class", "node")
+                .attr("r", d => sizeScale(d[nodeSizeMetric] || 1))
+                .attr("fill", d => color(getTopLevelCategory(d.topCategory)))
+                .attr("stroke", d => d3.color(color(getTopLevelCategory(d.topCategory))).darker(1.5))
+                .call(drag(simulation));
+
+            const labels = nodeGroup.append("text")
+                .attr("class", "node-label")
+                .attr("dy", d => sizeScale(d[nodeSizeMetric] || 1) + 5)
+                .text(d => d.title);
+
+            nodeGroup.on("mouseover", function(event, d) {
+                d3.select(this).select('.node').attr("stroke-width", 3).attr("stroke", "#fff");
+                tooltip.style("visibility", "visible")
+                    .html(`
+                        <h3>${d.title || 'No Title'}</h3>
+                        <p><strong>Slug:</strong> ${d.slug}</p>
+                        <p><strong>Content Type:</strong> ${d.contentType || 'N/A'}</p>
+                        <p><strong>Top Category:</strong> ${d.topCategory || 'N/A'}</p>
+                        <p><strong>Entity Density:</strong> ${d.entityDensity || 0}</p>
+                        <p><strong>Keyword Count:</strong> ${d.keywordCount || 0}</p>
+                        <p><strong>Search Volume:</strong> ${d.searchVolume || 'N/A'}</p>
+                    `);
+            }).on("mousemove", function(event) {
+                tooltip.style("top", (event.pageY - 10) + "px").style("left", (event.pageX + 10) + "px");
+            }).on("mouseout", function() {
+                d3.select(this).select('.node').attr("stroke-width", 1.5).attr("stroke", d => d3.color(color(getTopLevelCategory(d.topCategory))).darker(1.5));
+                tooltip.style("visibility", "hidden");
+            });
+
+            updateCategoryLegend(displayNodes);
+        }
+        
+        function updateCategoryLegend(nodesForLegend) {
+            const categories = new Set(nodesForLegend.map(d => getTopLevelCategory(d.topCategory)));
+            const legendContainer = d3.select("#legend-items").html("");
+            const sortedCategories = Array.from(categories).sort();
+            
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+            
+            sortedCategories.forEach(cat => {
+                const item = legendContainer.append("div").attr("class", "legend-item");
+                item.append("div").attr("class", "legend-color").style("background-color", color(cat));
+                item.append("span").text(cat);
+            });
+        }
+
+        function ticked() {
+            link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+            nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+        }
+
+        function drag(simulation) {
+          function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+          }
+          function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+          }
+          function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+          }
+          return d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+             if (jsonData) drawGraph(jsonData, csvData);
+        });
+
+    </script>
+</body>
+</html>
