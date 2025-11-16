@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive IA Graph Generator</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #f0f0f0;
+            --panel-bg: rgba(42, 42, 42, 0.9);
+            --panel-border: #555;
+            --link-color: #999;
+            --label-stroke: #1a1a1a;
+            --input-dashed-border: #555;
+        }
+
+        body.light-mode {
+            --bg-color: #f0f0f0;
+            --text-color: #1a1a1a;
+            --panel-bg: rgba(255, 255, 255, 0.9);
+            --panel-border: #ccc;
+            --link-color: #555;
+            --label-stroke: #f0f0f0;
+            --input-dashed-border: #ccc;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        #graph-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            cursor: move;
+        }
+        .node {
+            cursor: pointer;
+            stroke-width: 1.5px;
+            transition: stroke 0.3s, stroke-width 0.3s, r 0.3s, fill-opacity 0.3s;
+        }
+        .node-label {
+            fill: var(--text-color);
+            font-weight: normal;
+            stroke: var(--label-stroke);
+            stroke-width: 3px;
+            paint-order: stroke;
+            font-size: 10px;
+            text-anchor: middle;
+            pointer-events: none;
+        }
+        .link {
+            stroke: var(--link-color);
+            stroke-opacity: 0.6;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 8px 12px;
+            font-size: 14px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            color: var(--text-color);
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            max-width: 300px;
+        }
+        .tooltip strong { display: block; margin-bottom: 4px; color: #61dafb; }
+        .tooltip span { display: block; font-family: 'Courier New', Courier, monospace; font-size: 12px; word-wrap: break-word; }
+        #legend { position: absolute; top: 20px; left: 20px; background-color: var(--panel-bg); color: var(--text-color); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--panel-border); max-height: 80vh; overflow-y: auto; }
+        #legend h3 { margin-top: 15px; margin-bottom: 10px; font-size: 16px; border-bottom: 1px solid var(--panel-border); padding-bottom: 5px; }
+        .legend-item, .toggle-item { display: flex; align-items: center; margin-bottom: 5px; font-size: 12px; cursor: pointer;}
+        .legend-color { width: 15px; height: 15px; border-radius: 50%; margin-right: 8px; }
+        #instructions { position: absolute; bottom: 20px; right: 20px; background-color: var(--panel-bg); color: var(--text-color); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 12px; text-align: right; }
+        #instructions p { margin: 2px 0; }
+        
+        #uploader-container { display: flex; flex-direction: column; align-items: center; text-align: center; background: var(--panel-bg); color: var(--text-color); padding: 40px; border-radius: 12px; border: 1px solid var(--panel-border); }
+        #uploader-container h1 { margin-top: 0; }
+        .upload-area { margin: 10px 0; padding: 15px; border: 2px dashed var(--input-dashed-border); border-radius: 8px; width: 80%; }
+        .upload-area p { margin: 0 0 10px 0; }
+        .status { font-size: 12px; color: #28a745; margin-top: 5px; height: 15px; }
+        #generate-btn, #reset-btn { margin-top: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 8px; border: 1px solid #61dafb; background-color: transparent; color: #61dafb; transition: background-color 0.2s, color 0.2s; }
+        #generate-btn:hover, #reset-btn:hover { background-color: #61dafb; color: #1a1a1a; }
+        #generate-btn:disabled { cursor: not-allowed; opacity: 0.5; background-color: transparent !important; color: #61dafb !important; }
+
+        /* AI Modal Styles */
+        #ai-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 100; display: none; }
+        #ai-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: var(--panel-bg); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 12px; padding: 20px; width: 90%; max-width: 600px; z-index: 101; display: none; box-shadow: 0 5px 20px rgba(0,0,0,0.4); }
+        #ai-modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; margin-bottom: 15px; }
+        #ai-modal-title { font-size: 20px; margin: 0; }
+        #ai-modal-close { background: none; border: none; color: var(--text-color); font-size: 24px; cursor: pointer; }
+        #ai-modal-content { max-height: 60vh; overflow-y: auto; }
+        #ai-modal-content h3 { color: #61dafb; margin-top: 20px; margin-bottom: 10px; }
+        #ai-modal-content ul { padding-left: 20px; margin: 0; }
+        #ai-modal-content li { margin-bottom: 10px; }
+        .loading-spinner { border: 4px solid #ccc; border-top: 4px solid #61dafb; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+    <div id="graph-container" style="display: none;">
+        <svg id="ia-graph"></svg>
+    </div>
+
+    <div id="uploader-container">
+        <h1>Upload Your Site Data</h1>
+        <div class="upload-area">
+            <p>1. Upload Structure CSV</p>
+            <input type="file" id="csv-uploader" accept=".csv">
+            <div class="status" id="csv-status"></div>
+        </div>
+        <div class="upload-area">
+            <p>2. Upload NLP Data JSON</p>
+            <input type="file" id="json-uploader" accept=".json">
+             <div class="status" id="json-status"></div>
+        </div>
+        <button id="generate-btn" disabled>Generate Graph</button>
+    </div>
+    
+    <div class="tooltip" id="tooltip"></div>
+
+    <div id="legend" style="display: none;">
+        <button id="reset-btn">Reset Graph</button>
+        <div class="toggle-item" style="margin-top: 15px;">
+             <input type="checkbox" id="theme-toggle">
+            <label for="theme-toggle" style="margin-left: 8px;">Light Mode</label>
+        </div>
+        
+        <div id="lens-controls">
+            <h3>Lenses</h3>
+            <div class="toggle-item">
+                <input type="radio" name="lens" value="category" id="lens-category" checked>
+                <label for="lens-category" style="margin-left: 8px;">Category & Confidence</label>
+            </div>
+            <div class="toggle-item">
+                <input type="radio" name="lens" value="contentType" id="lens-contentType">
+                <label for="lens-contentType" style="margin-left: 8px;">Content Type</label>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 15px;">Filters</h3>
+        <div class="toggle-item">
+            <input type="checkbox" id="supplier-toggle" checked>
+            <label for="supplier-toggle" style="margin-left: 8px;">Show Suppliers</label>
+        </div>
+        <div id="section-toggles"></div>
+        
+        <h3 id="legend-title">Category Legend</h3>
+        <div id="legend-items"></div>
+    </div>
+
+    <div id="instructions" style="display: none;">
+        <p><strong>Click node</strong> to collapse/expand. <strong>Drag</strong> to pin.</p>
+        <p><strong>Right-click a node</strong> for ✨ AI analysis.</p>
+        <p><strong>Scroll</strong> to zoom. <strong>Drag background</strong> to pan.</p>
+    </div>
+
+    <div id="ai-modal-backdrop"></div>
+    <div id="ai-modal">
+        <div id="ai-modal-header">
+            <h2 id="ai-modal-title">✨ AI Page Analysis</h2>
+            <button id="ai-modal-close">&times;</button>
+        </div>
+        <div id="ai-modal-content">
+            <!-- AI content will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        let rootNode;
+        let simulation;
+        let svg, zoomGroup, link, nodeGroup;
+        let csvData = null, jsonData = null;
+        let sizeScale; 
+        let currentLens = 'category';
+        let allNodes = [];
+
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
+        const opacity = function(confidence) {
+            if (confidence > 0.95) return 1.0;
+            if (confidence > 0.85) return 0.85;
+            if (confidence > 0.70) return 0.65;
+            if (confidence > 0.50) return 0.45;
+            return 0.25;
+        };
+
+        document.getElementById('csv-uploader').addEventListener('change', handleCsvUpload);
+        document.getElementById('json-uploader').addEventListener('change', handleJsonUpload);
+        document.getElementById('generate-btn').addEventListener('click', () => {
+             processDataAndRender(csvData, jsonData);
+        });
+        document.getElementById('reset-btn').addEventListener('click', resetApp);
+        document.getElementById('ai-modal-close').addEventListener('click', hideAiModal);
+        document.getElementById('ai-modal-backdrop').addEventListener('click', hideAiModal);
+        document.getElementById('theme-toggle').addEventListener('change', (event) => {
+            document.body.classList.toggle('light-mode', event.target.checked);
+        });
+        d3.selectAll('input[name="lens"]').on('change', function() {
+            currentLens = this.value;
+            updateClusteringAndGraph();
+        });
+
+        function resetApp() {
+            document.getElementById('graph-container').style.display = 'none';
+            document.getElementById('legend').style.display = 'none';
+            document.getElementById('instructions').style.display = 'none';
+            document.getElementById('uploader-container').style.display = 'flex';
+            csvData = null;
+            jsonData = null;
+            rootNode = null;
+            allNodes = [];
+            if (simulation) simulation.stop();
+            d3.select("#ia-graph").html("");
+            document.getElementById('csv-uploader').value = '';
+            document.getElementById('json-uploader').value = '';
+            document.getElementById('csv-status').textContent = '';
+            document.getElementById('json-status').textContent = '';
+            document.getElementById('generate-btn').disabled = true;
+        }
+
+        function checkFilesReady() {
+            if (csvData && jsonData) {
+                document.getElementById('generate-btn').disabled = false;
+            }
+        }
+
+        function handleCsvUpload(event) {
+            const file = event.target.files[0];
+            const statusEl = document.getElementById('csv-status');
+            if (!file) {
+                 csvData = null; statusEl.textContent = ""; document.getElementById('generate-btn').disabled = true; return;
+            }
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true,
+                complete: (results) => {
+                    csvData = results.data; statusEl.textContent = `✅ ${file.name} loaded.`; checkFilesReady();
+                },
+                error: (err) => { statusEl.textContent = `❌ Error parsing CSV.`; console.error(err); }
+            });
+        }
+
+        function handleJsonUpload(event) {
+            const file = event.target.files[0];
+            const statusEl = document.getElementById('json-status');
+            if (!file) {
+                jsonData = null; statusEl.textContent = ""; document.getElementById('generate-btn').disabled = true; return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    jsonData = JSON.parse(e.target.result); statusEl.textContent = `✅ ${file.name} loaded.`; checkFilesReady();
+                } catch (err) {
+                     statusEl.textContent = `❌ Error parsing JSON.`; console.error(err);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function processDataAndRender(keywordData, nlpJson) {
+            const allJsonNodes = new Map();
+            function traverseJson(node) {
+                if (node && typeof node.slug !== 'undefined') {
+                    const slug = node.slug.trim();
+                    allJsonNodes.set(slug, {
+                        slug: slug, title: node.title,
+                        topCategory: node.topCategory || 'N/A',
+                        categoryConfidence: node.categoryConfidence === null ? 0.5 : (node.categoryConfidence || 0),
+                        primaryKeywords: node.primaryKeywords || [],
+                        children: [], _children: null
+                    });
+                }
+                if (node.children) { Object.values(node.children).forEach(traverseJson); }
+            }
+            traverseJson(Object.values(nlpJson)[0]);
+
+            const csvInfoMap = new Map();
+            keywordData.forEach(row => {
+                const slug = row['URL Slug'] ? row['URL Slug'].trim() : null;
+                if (slug && !csvInfoMap.has(slug)) {
+                    csvInfoMap.set(slug, {
+                        parentSlug: row['Parent'] ? row['Parent'].trim() : null,
+                        section: row['Section'] || 'N/A',
+                        isSupplier: row['Supplier'] === 'TRUE',
+                        contentType: row['Content Type'] || 'N/A'
+                    });
+                }
+            });
+            
+            allJsonNodes.forEach((node, slug) => {
+                const csvInfo = csvInfoMap.get(slug);
+                if (csvInfo) {
+                    node.parentSlug = csvInfo.parentSlug;
+                    node.section = csvInfo.section;
+                    node.isSupplier = csvInfo.isSupplier;
+                    node.contentType = csvInfo.contentType;
+                }
+            });
+
+            const roots = [];
+            allJsonNodes.forEach(node => {
+                const parentNode = node.parentSlug ? allJsonNodes.get(node.parentSlug) : null;
+                if (parentNode && parentNode.slug !== node.slug) {
+                    parentNode.children.push(node);
+                } else { roots.push(node); }
+            });
+
+            rootNode = roots.find(r => r.slug === '/');
+            if (!rootNode) {
+                 alert("Could not determine the root 'Homepage' node. Please ensure a page with slug '/' exists.");
+                 resetApp(); return;
+            }
+
+            function calculateBranchMetrics(node) {
+                let descendantConfidences = [];
+                function gatherConfidences(currentNode) {
+                    descendantConfidences.push(currentNode.categoryConfidence);
+                    if (currentNode.children) { currentNode.children.forEach(gatherConfidences); }
+                }
+                gatherConfidences(node);
+                const sum = descendantConfidences.reduce((a, b) => a + b, 0);
+                node.branchConfidenceAvg = sum / descendantConfidences.length || 0;
+            }
+            
+            function countDescendants(node) {
+                let count = node.children ? node.children.length : 0;
+                if (node.children) {
+                    node.children.forEach(child => { count += countDescendants(child); });
+                }
+                node.descendantCount = count;
+                calculateBranchMetrics(node);
+                return count;
+            }
+            countDescendants(rootNode);
+
+            allNodes = [];
+            function flatten(node) { allNodes.push(node); if (node.children) node.children.forEach(flatten); }
+            flatten(rootNode);
+            const maxDescendants = d3.max(allNodes, d => d.descendantCount);
+            sizeScale = d3.scaleSqrt().domain([0, maxDescendants]).range([5, 40]);
+            
+            if (rootNode.children) {
+                rootNode.children.forEach(child => {
+                    if (child.children?.length > 0) { child._children = child.children; child.children = null; }
+                });
+            }
+
+            document.getElementById('uploader-container').style.display = 'none';
+            document.getElementById('graph-container').style.display = 'block';
+            document.getElementById('legend').style.display = 'block';
+            document.getElementById('instructions').style.display = 'block';
+            
+            initializeGraph();
+            updateControlsAndGraph();
+        }
+
+        function showAiModal() { document.getElementById('ai-modal-backdrop').style.display = 'block'; document.getElementById('ai-modal').style.display = 'block'; }
+        function hideAiModal() { document.getElementById('ai-modal-backdrop').style.display = 'none'; document.getElementById('ai-modal').style.display = 'none'; }
+
+        async function getAiAnalysis(nodeData) {
+            showAiModal();
+            const contentEl = document.getElementById('ai-modal-content');
+            contentEl.innerHTML = '<div class="loading-spinner"></div>';
+            const systemPrompt = "You are a world-class SEO strategist and information architect. Your analysis is concise, actionable, and focused on improving website structure and content for better user experience and search engine performance. Format your response using HTML with h3 for titles and ul/li for lists.";
+            const userQuery = `Analyze the following web page based on its data and provide strategic recommendations. Page Title: "${nodeData.title}", URL Slug: "${nodeData.slug}", NLP-Detected Category: "${nodeData.topCategory}" (Confidence: ${(nodeData.categoryConfidence * 100).toFixed(0)}%), Primary Keywords: ${nodeData.primaryKeywords.length > 0 ? `"${nodeData.primaryKeywords.join('", "')}"` : 'None specified'}. Please provide the following: 1. A one-sentence summary of this page's likely purpose. 2. Three actionable SEO recommendations to improve this page. 3. Three creative ideas for new, related content (like blog posts or child pages) that could be added under this page.`;
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            try {
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, }) });
+                if (!response.ok) { throw new Error(`API call failed with status: ${response.status}`); }
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) { contentEl.innerHTML = text.replace(/\n/g, '<br>'); } else { contentEl.textContent = 'Could not retrieve analysis. The model may have returned an empty response.'; }
+            } catch (error) { console.error("Gemini API Error:", error); contentEl.textContent = `An error occurred while fetching the analysis: ${error.message}`; }
+        }
+
+        function getDisplayData(root) {
+            const nodes = [], links = [];
+            function recurse(node) {
+                if (!node) return;
+                nodes.push(node);
+                if (node.children) { node.children.forEach(child => { links.push({ source: node, target: child }); recurse(child); }); }
+            }
+            recurse(root);
+            return { nodes, links };
+        }
+
+        function getTopLevelCategory(categoryPath) {
+            if (!categoryPath || typeof categoryPath !== 'string' || categoryPath === 'N/A') return "N/A";
+            return categoryPath.split('/')[1] || "Other";
+        }
+
+        function initializeGraph() {
+            const width = window.innerWidth, height = window.innerHeight;
+            svg = d3.select("#ia-graph").attr("viewBox", [0, 0, width, height]);
+            zoomGroup = svg.append("g");
+            simulation = d3.forceSimulation()
+                .force("link", d3.forceLink().id(d => d.slug).distance(d => sizeScale(d.source.descendantCount) + sizeScale(d.target.descendantCount) + 30).strength(0.5))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .on("tick", ticked);
+            link = zoomGroup.append("g").selectAll("line");
+            nodeGroup = zoomGroup.append("g").selectAll("g");
+            const zoom = d3.zoom().scaleExtent([0.1, 8]).on("zoom", (event) => { zoomGroup.attr("transform", event.transform); });
+            svg.call(zoom);
+            document.getElementById('supplier-toggle').addEventListener('change', updateGraph);
+        }
+
+        function toggleNode(event, d) {
+            if (event.defaultPrevented) return;
+            if (d.children) { d._children = d.children; d.children = null; } 
+            else { d.children = d._children; d._children = null; }
+            updateGraph();
+        }
+
+        function updateControlsAndGraph() {
+            const allNodesFromRoot = [];
+            function collectAll(node) {
+                if(!node) return;
+                allNodesFromRoot.push(node);
+                let children = node.children || node._children;
+                if (children) { children.forEach(collectAll); }
+            }
+            collectAll(rootNode);
+
+            const sections = new Set(allNodesFromRoot.map(d => d.section));
+            const togglesContainer = d3.select("#section-toggles").html("");
+            Array.from(sections).sort().forEach(section => {
+                if(section === 'root' || section === 'Homepage' || section === 'N/A') return;
+                const item = togglesContainer.append("div").attr("class", "toggle-item");
+                item.append("input").attr("type", "checkbox").attr("id", `toggle-${section}`).attr("checked", true).on("change", updateGraph);
+                item.append("label").attr("for", `toggle-${section}`).style("margin-left", "8px").text(section);
+            });
+            updateClusteringAndGraph();
+        }
+
+        function updateClusteringAndGraph() {
+            const width = window.innerWidth, height = window.innerHeight;
+            const lensProp = currentLens === 'category' ? 'topCategory' : 'contentType';
+            const valueExtractor = currentLens === 'category' ? d => getTopLevelCategory(d.topCategory) : d => d.contentType;
+
+            const clusterCenters = new Map();
+            const uniqueValues = Array.from(new Set(allNodes.map(valueExtractor)));
+            uniqueValues.forEach((val, i) => {
+                const angle = (i / uniqueValues.length) * 2 * Math.PI;
+                clusterCenters.set(val, {
+                    x: width / 2 + (width / 4) * Math.cos(angle),
+                    y: height / 2 + (height / 4) * Math.sin(angle)
+                });
+            });
+
+            simulation.force("x", d3.forceX(d => clusterCenters.get(valueExtractor(d))?.x || width / 2).strength(0.1));
+            simulation.force("y", d3.forceY(d => clusterCenters.get(valueExtractor(d))?.y || height / 2).strength(0.1));
+            
+            updateGraph();
+        }
+
+
+        function updateGraph() {
+            const showSuppliers = document.getElementById('supplier-toggle').checked;
+            const selectedSections = new Set(['Homepage', 'root']); 
+            d3.selectAll("#section-toggles input:checked").each(function() {
+                selectedSections.add(d3.select(this).attr('id').replace('toggle-', ''));
+            });
+            
+            const allVisibleNodes = getDisplayData(rootNode).nodes;
+            const displayNodes = allVisibleNodes.filter(d => {
+                 const supplierCheck = showSuppliers || !d.isSupplier;
+                 const sectionCheck = selectedSections.has(d.section);
+                 return supplierCheck && sectionCheck;
+            });
+
+            const displayNodeIds = new Set(displayNodes.map(d => d.slug));
+            const displayLinks = getDisplayData(rootNode).links.filter(l => displayNodeIds.has(l.source.slug) && displayNodeIds.has(l.target.slug));
+
+            simulation.nodes(displayNodes);
+            simulation.force("link").links(displayLinks);
+
+            const colorProp = currentLens === 'category' ? d => getTopLevelCategory(d.topCategory) : d => d.contentType;
+            const opacityProp = currentLens === 'category' ? d => opacity(d.categoryConfidence) : 1.0;
+
+            nodeGroup = nodeGroup.data(displayNodes, d => d.slug).join(
+                enter => {
+                    const g = enter.append("g")
+                        .on('click', toggleNode)
+                        .on('contextmenu', (event, d) => { event.preventDefault(); getAiAnalysis(d); })
+                        .call(drag(simulation));
+
+                    g.append("circle").attr("class", "node")
+                        .attr("r", d => sizeScale(d.descendantCount))
+                        .attr("fill", d => color(colorProp(d)))
+                        .style("fill-opacity", opacityProp)
+                        .attr("stroke", d => d._children ? "#ffab00" : "#fff")
+                        .attr("stroke-width", d => d._children ? 3 : 1.5);
+                    
+                    g.append("text").attr("class", "node-label")
+                        .text(d => d.title)
+                        .attr("y", d => sizeScale(d.descendantCount) + 12)
+                        .style("display", d => sizeScale(d.descendantCount) > 10 ? "block" : "none");
+
+                    g.on("mouseover", (event, d) => {
+                        const tooltip = d3.select("#tooltip");
+                        tooltip.transition().duration(200).style("opacity", .95);
+                        tooltip.html(`<strong>${d.title}</strong><span><strong>Category:</strong> ${d.topCategory}</span><span><strong>Page Confidence:</strong> ${(d.categoryConfidence * 100).toFixed(1)}%</span><span><strong>Avg. Branch Confidence:</strong> ${(d.branchConfidenceAvg * 100).toFixed(1)}%</span>`)
+                            .style("left", (event.pageX + 15) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    }).on("mouseout", () => { d3.select("#tooltip").transition().duration(500).style("opacity", 0); });
+                    
+                    g.on("dblclick", (event, d) => { d.fx = null; d.fy = null; });
+                    return g;
+                },
+                update => {
+                    update.select("circle").transition()
+                        .attr("stroke", d => d._children ? "#ffab00" : "#fff")
+                        .attr("stroke-width", d => d._children ? 3 : 1.5)
+                        .attr("r", d => sizeScale(d.descendantCount))
+                        .attr("fill", d => color(colorProp(d)))
+                        .style("fill-opacity", opacityProp);
+                    update.select("text").attr("y", d => sizeScale(d.descendantCount) + 12).style("display", d => sizeScale(d.descendantCount) > 10 ? "block" : "none");
+                    return update;
+                },
+                exit => exit.remove()
+            );
+
+            link = link.data(displayLinks, d => `${d.source.slug}-${d.target.slug}`).join("line").attr("class", "link");
+            
+            simulation.alpha(1).restart();
+            updateLegend(displayNodes);
+        }
+        
+        function updateLegend(nodesForLegend) {
+            const legendTitle = document.getElementById('legend-title');
+            const legendContainer = d3.select("#legend-items").html("");
+            let uniqueValues, title;
+
+            if (currentLens === 'category') {
+                title = 'Category Legend';
+                uniqueValues = new Set(nodesForLegend.map(d => getTopLevelCategory(d.topCategory)));
+            } else {
+                title = 'Content Type Legend';
+                uniqueValues = new Set(nodesForLegend.map(d => d.contentType || 'N/A'));
+            }
+            legendTitle.textContent = title;
+            
+            Array.from(uniqueValues).sort().forEach(val => {
+                const item = legendContainer.append("div").attr("class", "legend-item");
+                item.append("div").attr("class", "legend-color").style("background-color", color(val));
+                item.append("span").text(val);
+            });
+        }
+
+        function ticked() {
+            link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+            nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+        }
+
+        function drag(simulation) {
+          function dragstarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+          function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+          function dragended(event, d) { if (!event.active) simulation.alphaTarget(0); }
+          return d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended);
+        }
+    </script>
+</body>
+</html>
