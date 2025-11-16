@@ -1,0 +1,35 @@
+"""
+CONTENT BRIEF KEYWORD CLUSTERING TOOL
+=====================================
+This notebook helps you cluster keywords, assign them to pages, and identify cannibalization risks.
+
+SETUP:
+1. Upload your keyword CSV (the 20K+ row one)
+2. Make sure it has columns: 'keyword', 'volume' (and optionally 'intent', 'audience')
+3. Run each cell in order
+4. Review outputs and adjust thresholds as needed
+
+"""
+
+# ============================================================================
+# STEP 1: INSTALL & IMPORT
+# ============================================================================
+
+!pip install openai scikit-learn pandas numpy -q
+
+import pandas as pd
+import numpy as np
+from openai import OpenAI
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import DBSCAN, AgglomerativeClustering
+import json
+from collections import defaultdict
+import warnings
+warnings.filterwarnings('ignore')
+
+# Initialize OpenAI client
+# You'll need to set your API key - either set it in Colab secrets or paste here
+from google.colab import userdata
+client = OpenAI(api_key=userdata.get('OPENAI_API_KEY'))
+
+print("✅ Libraries loaded")
