@@ -100,7 +100,7 @@ with tab1:
     uploaded_file = st.file_uploader(
         "Upload Keywords CSV",
         type=['csv'],
-        help="CSV should have 'keyword' and 'volume' columns",
+        help="Flexible column mapping: works with 'Keyword', 'Query', 'Search Term', etc. and 'Volume', 'MSV', 'Search Volume', etc.",
         key="cluster_csv"
     )
 
@@ -126,8 +126,31 @@ with tab1:
         else:
             try:
                 # Load data
-                df = pd.read_csv(uploaded_file)
-                st.success(f"✅ Loaded {len(df)} keywords")
+                df_raw = pd.read_csv(uploaded_file)
+                st.success(f"✅ Loaded {len(df_raw)} rows from CSV")
+
+                # Show column detection preview
+                with st.expander("📋 Column Detection Preview", expanded=False):
+                    st.write("**Original columns:**", ", ".join(df_raw.columns.tolist()))
+
+                    # Try to detect which columns will be used
+                    cols_lower = df_raw.columns.str.lower().str.strip()
+                    keyword_candidates = [c for c in df_raw.columns if any(
+                        kw in c.lower().replace('_', ' ').replace('-', ' ')
+                        for kw in ['keyword', 'query', 'term', 'phrase']
+                    )]
+                    volume_candidates = [c for c in df_raw.columns if any(
+                        v in c.lower().replace('_', ' ').replace('-', ' ')
+                        for v in ['volume', 'search', 'msv', 'sv']
+                    )]
+
+                    if keyword_candidates:
+                        st.write(f"**Keyword column detected:** `{keyword_candidates[0]}`")
+                    if volume_candidates:
+                        st.write(f"**Volume column detected:** `{volume_candidates[0]}`")
+
+                    st.write("**Sample data:**")
+                    st.dataframe(df_raw.head(3), use_container_width=True)
 
                 # Initialize engine
                 engine = ClusterEngine(
@@ -137,10 +160,10 @@ with tab1:
 
                 # Run appropriate mode
                 if "DISCOVER" in mode:
-                    strategic_brief = engine.run_discover_mode(df, min_volume=min_volume)
+                    strategic_brief = engine.run_discover_mode(df_raw, min_volume=min_volume)
                 else:
                     strategic_brief = engine.run_populate_mode(
-                        df,
+                        df_raw,
                         target_category,
                         min_volume=min_volume
                     )

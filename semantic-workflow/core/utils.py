@@ -8,7 +8,11 @@ from typing import List, Dict
 
 def validate_keywords_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Validate and clean keywords CSV.
+    Validate and clean keywords CSV with flexible column mapping.
+
+    Handles common variations like:
+    - Keywords: "Keyword", "Keywords", "Query", "Search Term", "KW", etc.
+    - Volume: "Volume", "Search Volume", "MSV", "SV", "Monthly Searches", etc.
 
     Args:
         df: Input DataFrame
@@ -19,25 +23,93 @@ def validate_keywords_csv(df: pd.DataFrame) -> pd.DataFrame:
     Raises:
         ValueError: If required columns are missing
     """
-    # Standardize column names
+    # Common variations for keyword column
+    KEYWORD_PATTERNS = [
+        'keyword', 'keywords', 'query', 'queries', 'search query',
+        'search queries', 'search term', 'search terms', 'term',
+        'terms', 'kw', 'search', 'phrase', 'phrases'
+    ]
+
+    # Common variations for volume column
+    VOLUME_PATTERNS = [
+        'volume', 'search volume', 'monthly search volume', 'msv',
+        'sv', 'searches', 'monthly searches', 'avg monthly searches',
+        'search vol', 'monthly volume', 'avg searches', 'search count',
+        'monthly search', 'monthly search count'
+    ]
+
+    # Standardize column names (lowercase, strip whitespace)
     df.columns = df.columns.str.lower().str.strip()
 
-    # Check for required columns
-    if 'keyword' not in df.columns:
-        raise ValueError("CSV must have a 'keyword' column")
+    # Find keyword column
+    keyword_col = None
+    for col in df.columns:
+        # Remove common extra characters
+        clean_col = col.replace('_', ' ').replace('-', ' ').strip()
+        if clean_col in KEYWORD_PATTERNS:
+            keyword_col = col
+            break
 
-    # Add volume column if missing
+    if not keyword_col:
+        # Try partial matching as fallback
+        for col in df.columns:
+            clean_col = col.replace('_', ' ').replace('-', ' ').strip()
+            if any(pattern in clean_col for pattern in ['keyword', 'query', 'term', 'phrase']):
+                keyword_col = col
+                break
+
+    if not keyword_col:
+        available_cols = ', '.join(df.columns.tolist())
+        raise ValueError(
+            f"Could not find keyword column. Available columns: {available_cols}\n"
+            f"Expected one of: {', '.join(KEYWORD_PATTERNS[:5])}, etc."
+        )
+
+    # Find volume column
+    volume_col = None
+    for col in df.columns:
+        clean_col = col.replace('_', ' ').replace('-', ' ').strip()
+        if clean_col in VOLUME_PATTERNS:
+            volume_col = col
+            break
+
+    if not volume_col:
+        # Try partial matching as fallback
+        for col in df.columns:
+            clean_col = col.replace('_', ' ').replace('-', ' ').strip()
+            if any(pattern in clean_col for pattern in ['volume', 'search', 'msv', 'sv']):
+                # Make sure it's not the keyword column we already found
+                if col != keyword_col:
+                    volume_col = col
+                    break
+
+    # Rename columns to standard names
+    rename_map = {keyword_col: 'keyword'}
+    if volume_col:
+        rename_map[volume_col] = 'volume'
+
+    df = df.rename(columns=rename_map)
+
+    # Add volume column if still missing
     if 'volume' not in df.columns:
         df['volume'] = 0
 
+    # Keep only the columns we need (plus any extra for reference)
+    # This prevents issues with many-column spreadsheets
+    essential_cols = ['keyword', 'volume']
+    extra_cols = [col for col in df.columns if col not in essential_cols]
+
     # Clean data
     df = df.dropna(subset=['keyword'])
-    df['keyword'] = df['keyword'].str.strip().str.lower()
+    df['keyword'] = df['keyword'].astype(str).str.strip().str.lower()
     df = df.drop_duplicates(subset=['keyword'])
     df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
 
     # Remove empty keywords
     df = df[df['keyword'] != '']
+
+    # Keep only essential columns (drop the extra stuff from columns H, I, etc.)
+    df = df[essential_cols]
 
     return df
 
