@@ -300,7 +300,17 @@ with tab2:
     )
 
     # Run validation
-    run_validation = st.button("🚀 Validate Draft", type="primary", key="run_validate")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        run_validation = st.button("🚀 Validate Draft", type="primary", key="run_validate")
+    with col2:
+        if st.button("🔄 Clear Results", key="clear_results"):
+            # Clear all session state for validation
+            if 'validation_results' in st.session_state:
+                del st.session_state['validation_results']
+            if 'last_validation_inputs' in st.session_state:
+                del st.session_state['last_validation_inputs']
+            st.rerun()
 
     if run_validation:
         if not draft_text:
@@ -309,6 +319,30 @@ with tab2:
             st.error("❌ Please provide a target category")
         else:
             try:
+                # Clear any previous results to force fresh display
+                if 'validation_results' in st.session_state:
+                    del st.session_state['validation_results']
+
+                # Create unique key based on inputs to ensure fresh analysis
+                import hashlib
+                input_hash = hashlib.md5(
+                    f"{draft_text}{target_category_val}{cluster_id_input}{run_drag}".encode()
+                ).hexdigest()
+
+                # Store current inputs to detect changes
+                current_inputs = {
+                    'text_hash': input_hash,
+                    'category': target_category_val,
+                    'cluster': cluster_id_input
+                }
+
+                # Only run if inputs changed
+                last_inputs = st.session_state.get('last_validation_inputs', {})
+                if last_inputs.get('text_hash') == input_hash:
+                    st.info("💡 Same inputs detected. If results look wrong, click 'Clear Results' and try again.")
+
+                st.session_state['last_validation_inputs'] = current_inputs
+
                 validator = DraftValidator()
 
                 results = validator.validate_draft(

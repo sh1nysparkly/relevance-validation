@@ -50,7 +50,22 @@ class DraftValidator:
         }
 
         # Step 1: Basic category detection
-        st.subheader("Step 1: Category Detection")
+        st.subheader("Step 1: Category Detection - Testing YOUR DRAFT CONTENT")
+
+        # Show what we're testing vs what the brief predicted (if available)
+        if strategic_brief_df is not None and cluster_id is not None:
+            cluster_row = strategic_brief_df[strategic_brief_df['cluster_id'] == cluster_id]
+            if not cluster_row.empty:
+                cluster_row = cluster_row.iloc[0]
+                brief_category = cluster_row.get('detected_category', 'N/A')
+                brief_confidence = cluster_row.get('category_confidence', 0)
+
+                st.info(
+                    f"📊 **Strategic Brief Prediction** (based on keywords): "
+                    f"`{brief_category}` ({brief_confidence:.2%} confidence)\n\n"
+                    f"Now testing your actual draft content..."
+                )
+
         match_result = self.nlp_analyzer.test_category_match(draft_text, target_category)
 
         results['matches_target'] = match_result['matches_target']
@@ -58,7 +73,7 @@ class DraftValidator:
         results['confidence'] = match_result['confidence']
         results['matched_category'] = match_result.get('matched_category')
 
-        # Display results
+        # Display results with comparison
         if match_result['matches_target']:
             st.success(f"✅ Draft matches target category!")
             st.write(f"**Matched:** {match_result['matched_category']}")
@@ -69,13 +84,40 @@ class DraftValidator:
             st.write(f"**Detected:** {match_result['detected_category']}")
             st.write(f"**Confidence:** {match_result['confidence']:.2%}")
 
+            # Show comparison if we have brief data
+            if strategic_brief_df is not None and cluster_id is not None:
+                cluster_row = strategic_brief_df[strategic_brief_df['cluster_id'] == cluster_id]
+                if not cluster_row.empty:
+                    cluster_row = cluster_row.iloc[0]
+                    brief_confidence = cluster_row.get('category_confidence', 0)
+                    detected_matches_brief = cluster_row.get('detected_category', '') == match_result['detected_category']
+
+                    if not detected_matches_brief:
+                        st.warning(
+                            f"⚠️ **Performance Gap**: Your keywords predicted `{cluster_row.get('detected_category', 'N/A')}` "
+                            f"but your draft detected `{match_result['detected_category']}`. "
+                            f"Your actual content may be sending different topical signals than your keyword strategy."
+                        )
+
         # Show all categories
         with st.expander("View All Detected Categories"):
             for cat in match_result['all_categories']:
                 st.write(f"- {cat['name']} ({cat['confidence']:.2%})")
 
         # Step 2: Entity analysis
-        st.subheader("Step 2: Entity Analysis")
+        st.subheader("Step 2: Entity Analysis - From YOUR DRAFT")
+
+        # Show comparison if we have strategic brief
+        if strategic_brief_df is not None and cluster_id is not None:
+            cluster_row = strategic_brief_df[strategic_brief_df['cluster_id'] == cluster_id]
+            if not cluster_row.empty:
+                cluster_row = cluster_row.iloc[0]
+                brief_entities = cluster_row.get('top_entities', 'N/A')
+                st.info(
+                    f"📊 **Strategic Brief Entities** (from keywords): {brief_entities}\n\n"
+                    f"Entities detected in your actual draft content:"
+                )
+
         entity_result = self.nlp_analyzer.analyze_text(
             draft_text,
             extract_entities=True,
@@ -85,7 +127,7 @@ class DraftValidator:
         results['entities'] = entity_result['entities']
 
         if entity_result['entities']:
-            st.write("**Top Entities (by salience):**")
+            st.write("**Top Entities from Draft (by salience):**")
             for entity in entity_result['entities'][:10]:
                 wiki_link = f" ([Wikipedia]({entity['wikipedia_url']}))" if entity['wikipedia_url'] else ""
                 st.write(f"- **{entity['name']}** (salience: {entity['salience']:.3f}, type: {entity['type']}){wiki_link}")
