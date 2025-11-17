@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from analyzers.cluster_engine import ClusterEngine
 from analyzers.draft_validator import DraftValidator
+from core.categories import ALL_CATEGORIES
 
 # Load environment variables
 load_dotenv()
@@ -107,11 +108,15 @@ with tab1:
     # Target category input (only for POPULATE mode)
     target_category = None
     if "POPULATE" in mode:
-        target_category = st.text_input(
-            "Target Category",
-            placeholder="/Travel/Family",
-            help="The category you want to match (e.g., /Travel/Family)"
+        st.write("**Target Category** (searchable dropdown):")
+        target_category = st.selectbox(
+            "Select or search for your target category",
+            options=[""] + ALL_CATEGORIES,
+            help="Start typing to search Google's predefined categories",
+            label_visibility="collapsed"
         )
+        if not target_category:
+            st.info("💡 Start typing in the dropdown to search categories (e.g., 'travel', 'family', etc.)")
 
     # Run button
     run_cluster = st.button("🚀 Run Analysis", type="primary", key="run_cluster")
@@ -248,12 +253,16 @@ with tab2:
         help="Your draft page content (title, meta description, body copy)"
     )
 
-    target_category_val = st.text_input(
-        "Target Category",
-        placeholder="/Travel/Family",
-        help="The category this content should match",
+    st.write("**Target Category** (searchable dropdown):")
+    target_category_val = st.selectbox(
+        "Select or search for your target category",
+        options=[""] + ALL_CATEGORIES,
+        help="Start typing to search Google's predefined categories",
+        label_visibility="collapsed",
         key="val_target"
     )
+    if not target_category_val:
+        st.info("💡 Start typing in the dropdown to search categories (e.g., 'travel', 'family', etc.)")
 
     # Optional: Upload strategic brief
     st.subheader("Optional: Keyword Coverage Analysis")

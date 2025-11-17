@@ -107,11 +107,22 @@ class DraftValidator:
             st.subheader("Step 4: Iterative Drag Analysis (Optimization)")
             st.warning("⚠️ This is an expensive operation - it will make many API calls!")
 
+            # Extract official keywords if brief is provided
+            official_keywords = []
+            if strategic_brief_df is not None and cluster_id is not None:
+                cluster_row = strategic_brief_df[strategic_brief_df['cluster_id'] == cluster_id]
+                if not cluster_row.empty:
+                    cluster_row = cluster_row.iloc[0]
+                    primary = [k.strip() for k in str(cluster_row.get('primary_keywords', '')).split(',') if k.strip()]
+                    secondary = [k.strip() for k in str(cluster_row.get('secondary_keywords', '')).split(',') if k.strip()]
+                    official_keywords = primary + secondary
+
             with st.spinner("Running iterative drag analysis..."):
                 drag_results = self.nlp_analyzer.iterative_drag_analysis(
                     text=draft_text,
                     target_category=target_category,
                     entities_to_test=[e['name'] for e in entity_result['entities']],
+                    official_keywords=official_keywords if official_keywords else None,
                     show_progress=True
                 )
 
@@ -183,7 +194,11 @@ class DraftValidator:
 
     def _display_drag_analysis(self, drag_results: Dict):
         """
-        Display results of iterative drag analysis.
+        Display results of iterative drag analysis with dual-list approach.
+
+        Shows different messaging for:
+        - List A (Official Keywords) - strategic brief issues
+        - List B (Other Entities) - content cleaning opportunities
 
         Args:
             drag_results: Results from iterative_drag_analysis
@@ -205,6 +220,12 @@ class DraftValidator:
             st.info("No improvements found - your draft is already optimized!")
             return
 
+        # Get separate lists
+        removed_official = drag_results.get('removed_official_keywords', [])
+        removed_other = drag_results.get('removed_other_entities', [])
+        list_a_count = drag_results.get('list_a_count', 0)
+        list_b_count = drag_results.get('list_b_count', 0)
+
         # Show iterations
         iterations = drag_results['iterations']
 
@@ -213,25 +234,55 @@ class DraftValidator:
 
             for it in iterations:
                 improvement_pct = it['improvement']
+                is_official = it.get('is_official_keyword', False)
+                icon = "🚨" if is_official else "🧹"
+
                 st.write(
-                    f"{it['iteration']}. Remove **'{it['removed']}'** → "
+                    f"{it['iteration']}. {icon} Remove **'{it['removed']}'** → "
                     f"{it['old_confidence']:.2%} → {it['new_confidence']:.2%} "
                     f"(+{improvement_pct:.2%})"
                 )
 
-            # Final recommendation
-            st.write("\n**📋 Recommendation:**")
-            removed_terms = drag_results['removed_terms']
+            # Separate recommendations by list
+            st.write("\n**📋 RECOMMENDATIONS:**")
 
-            st.write("Remove these terms from your draft:")
-            for term in removed_terms:
-                st.write(f"- ❌ **{term}**")
+            # List B (Other Entities) - Simple content cleaning
+            if removed_other:
+                st.write("\n**🧹 Content Cleaning Recommendations:**")
+                st.info(
+                    f"Removing these entities (from your draft copy) will boost confidence. "
+                    f"These are NOT your official keywords - just messy entities in the content."
+                )
+                for term in removed_other:
+                    st.write(f"- ❌ {term}")
+
+            # List A (Official Keywords) - Strategic problem!
+            if removed_official:
+                st.write("\n**🚨 STRATEGIC BRIEF WARNING:**")
+                st.error(
+                    f"⚠️ Your **official keywords** are actively harming your topical signal! "
+                    f"These are from your strategic brief - removing them means your brief may be wrong."
+                )
+                for term in removed_official:
+                    st.write(f"- 🚨 **{term}** (Official Keyword - consider removing from brief)")
+
+                st.warning(
+                    "**Action Required:** Review your strategic brief. These official keywords "
+                    "are pulling your content away from the target category. You may need to "
+                    "rethink your keyword strategy for this page."
+                )
+
+            # Only warn about thin content if we removed OTHER entities, not official ones
+            elif removed_other and len(removed_other) > 5:
+                st.info(
+                    "💡 **Tip:** You're removing several non-keyword entities. Make sure your draft "
+                    "still has enough substance and doesn't lose important context."
+                )
 
             st.write(f"\n**Potential Final Confidence:** {final:.2%}")
 
-            # Warning if too many removals
-            if len(removed_terms) > len(iterations) * 0.5:
-                st.warning(
-                    "⚠️ You're removing a lot of terms. Make sure your draft still has "
-                    "enough substance and doesn't lose important context."
-                )
+            # Show entity breakdown if we have list counts
+            if list_a_count > 0 or list_b_count > 0:
+                st.write(f"\n**Entity Analysis:**")
+                st.write(f"- List A (Official Keywords): {list_a_count} total, {len(removed_official)} removed")
+                st.write(f"- List B (Other Entities): {list_b_count} total, {len(removed_other)} removed")

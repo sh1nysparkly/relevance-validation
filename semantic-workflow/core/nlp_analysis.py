@@ -156,6 +156,7 @@ class NLPAnalyzer:
         text: str,
         target_category: str,
         entities_to_test: Optional[List[str]] = None,
+        official_keywords: Optional[List[str]] = None,
         min_keywords: int = 5,
         show_progress: bool = True
     ) -> Dict:
@@ -165,15 +166,20 @@ class NLPAnalyzer:
         This is the expensive "remove-and-test" approach that finds the worst offenders
         one at a time, locking in wins progressively.
 
+        Separates entities into two lists:
+        - List A (Official Keywords): Terms from your strategic brief
+        - List B (Other Entities): Everything else detected in the copy
+
         Args:
             text: Original draft text
             target_category: Target category to optimize for
             entities_to_test: List of entities/keywords to test (if None, extracts from text)
+            official_keywords: List of official keywords from strategic brief (for dual-list analysis)
             min_keywords: Minimum number of keywords to keep
             show_progress: Whether to show progress in Streamlit
 
         Returns:
-            Dict with iterative analysis results and recommendations
+            Dict with iterative analysis results and recommendations, separated by list
         """
         # Get baseline
         baseline = self.test_category_match(text, target_category)
@@ -192,13 +198,28 @@ class NLPAnalyzer:
                 'iterations': [],
                 'final_confidence': baseline_confidence,
                 'removed_terms': [],
+                'removed_official_keywords': [],
+                'removed_other_entities': [],
                 'error': 'No entities found to test'
             }
+
+        # Categorize entities into List A (official) and List B (other)
+        official_keywords_lower = [kw.lower() for kw in (official_keywords or [])]
+        list_a_entities = []  # Official keywords
+        list_b_entities = []  # Other entities
+
+        for entity in entities_to_test:
+            if entity.lower() in official_keywords_lower:
+                list_a_entities.append(entity)
+            else:
+                list_b_entities.append(entity)
 
         # Iterative removal
         current_text = text
         current_confidence = baseline_confidence
         removed_terms = []
+        removed_official = []  # Track List A removals
+        removed_other = []     # Track List B removals
         iterations = []
         remaining_entities = entities_to_test.copy()
 
@@ -251,9 +272,17 @@ class NLPAnalyzer:
                 removed_terms.append(best_entity)
                 remaining_entities.remove(best_entity)
 
+                # Track which list this term came from
+                is_official = best_entity in list_a_entities
+                if is_official:
+                    removed_official.append(best_entity)
+                else:
+                    removed_other.append(best_entity)
+
                 iterations.append({
                     'iteration': iteration_num,
                     'removed': best_entity,
+                    'is_official_keyword': is_official,
                     'old_confidence': current_confidence,
                     'new_confidence': best_new_confidence,
                     'improvement': best_improvement
@@ -275,5 +304,9 @@ class NLPAnalyzer:
             'final_confidence': current_confidence,
             'total_improvement': current_confidence - baseline_confidence,
             'removed_terms': removed_terms,
+            'removed_official_keywords': removed_official,
+            'removed_other_entities': removed_other,
+            'list_a_count': len(list_a_entities),
+            'list_b_count': len(list_b_entities),
             'error': None
         }
