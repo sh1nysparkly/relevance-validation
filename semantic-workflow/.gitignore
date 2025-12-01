@@ -1,0 +1,44 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Data files
+*.csv
+*.json
+*.xlsx
+data/*
+!data/.gitkeep
+!data/sample_keywords.csv
+outputs/*
+!outputs/.gitkeep
+
+# Google Cloud credentials
+*.json
+!package.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks
+*.ipynb_checkpoints/
