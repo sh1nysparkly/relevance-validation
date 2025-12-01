@@ -10,14 +10,60 @@ Two-mode workflow:
 import os
 import streamlit as st
 import pandas as pd
+import json
+import tempfile
 from dotenv import load_dotenv
 
 from analyzers.cluster_engine import ClusterEngine
 from analyzers.draft_validator import DraftValidator
 from core.categories import ALL_CATEGORIES
 
-# Load environment variables
+# Load environment variables (for local development)
 load_dotenv()
+
+# ============================================================================
+# CREDENTIAL HANDLING - Supports both Streamlit Cloud and local development
+# ============================================================================
+
+def get_credentials():
+    """
+    Get API credentials from Streamlit secrets (cloud) or environment variables (local).
+    Returns: (openai_key_default, google_creds_path_default)
+    """
+    openai_key_default = ""
+    google_creds_path_default = ""
+
+    # Try Streamlit secrets first (for cloud deployment)
+    try:
+        if "OPENAI_API_KEY" in st.secrets:
+            openai_key_default = st.secrets["OPENAI_API_KEY"]
+
+        # Handle Google credentials JSON from secrets
+        if "GOOGLE_APPLICATION_CREDENTIALS_JSON" in st.secrets:
+            google_creds_json = st.secrets["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
+
+            # Write JSON to a temporary file
+            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json')
+            json.dump(json.loads(google_creds_json), temp_file)
+            temp_file.close()
+
+            google_creds_path_default = temp_file.name
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_file.name
+    except Exception:
+        # Secrets not available (local development) - use environment variables
+        pass
+
+    # Fall back to environment variables if secrets not found
+    if not openai_key_default:
+        openai_key_default = os.getenv("OPENAI_API_KEY", "")
+
+    if not google_creds_path_default:
+        google_creds_path_default = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+
+    return openai_key_default, google_creds_path_default
+
+# Get default credentials
+openai_key_default, google_creds_path_default = get_credentials()
 
 # Page config
 st.set_page_config(
@@ -34,17 +80,23 @@ st.markdown("*Build smarter content strategies with AI-powered semantic analysis
 with st.sidebar:
     st.header("⚙️ Configuration")
 
+    # Show credential source info
+    if openai_key_default and google_creds_path_default:
+        st.success("✅ Credentials loaded from Streamlit secrets")
+    elif openai_key_default or google_creds_path_default:
+        st.info("🔑 Using credentials from environment/secrets")
+
     openai_key = st.text_input(
         "OpenAI API Key",
-        value=os.getenv("OPENAI_API_KEY", ""),
+        value=openai_key_default,
         type="password",
-        help="Required for generating embeddings (Part 1)"
+        help="Required for generating embeddings (Part 1). Auto-loaded from secrets if configured."
     )
 
     google_creds_path = st.text_input(
         "Google Cloud Credentials Path",
-        value=os.getenv("GOOGLE_APPLICATION_CREDENTIALS", ""),
-        help="Path to your service account JSON file"
+        value=google_creds_path_default,
+        help="Path to your service account JSON file. Auto-loaded from secrets if configured."
     )
 
     if google_creds_path and os.path.exists(google_creds_path):

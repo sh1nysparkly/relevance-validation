@@ -21,6 +21,7 @@ ENV/
 *.xlsx
 data/*
 !data/.gitkeep
+!data/sample_keywords.csv
 outputs/*
 !outputs/.gitkeep
 
